@@ -5,4 +5,5 @@ __pycache__/
 *.csv
 *.cfg
 *_summary.txt
+experiment_results.txt
 build/

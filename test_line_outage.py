@@ -1,10 +1,10 @@
-﻿from pathlib import Path
+from pathlib import Path
 import subprocess
 import pandas as pd
-from dashboard.microgrid import Settings, _write_config
+from dashboard.microgrid import Settings, _write_config, _engine_path, ROOT
 
-root = Path.cwd()
-exe = root / "build" / "Release" / "asi_engine.exe"
+root = ROOT
+exe = _engine_path()
 settings = Settings(seed=2026, population=8, generations=3)
 actions = [0] * 24
 

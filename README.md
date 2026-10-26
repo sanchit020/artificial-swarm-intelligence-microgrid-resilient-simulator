@@ -1,6 +1,12 @@
 # Resilient Microgrid Power Dispatch & Critical Flow Allocation under N-k Multi-Contingencies
 
-An engineering simulation and decision-support framework coupling **Artificial Swarm Intelligence (Genetic Algorithm)** with a **two-stage critical-first Edmonds–Karp network flow allocator** to model and analyze microgrid resilience under simultaneous, multi-element ($N-k$) grid failures.
+[![C++17](https://img.shields.io/badge/Language-C%2B%2B17-00599C?logo=c%2B%2B)](CMakeLists.txt)
+[![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?logo=python)](requirements.txt)
+[![Build Tool](https://img.shields.io/badge/CMake-3.16%2B-064F8C?logo=cmake)](CMakeLists.txt)
+[![Framework](https://img.shields.io/badge/Dashboard-Streamlit-FF4B4B?logo=streamlit)](dashboard/app.py)
+[![Architecture](https://img.shields.io/badge/Docs-ARCHITECTURE.md-2ea44f)](ARCHITECTURE.md)
+
+An engineering decision-support framework coupling **Artificial Swarm Intelligence (Genetic Algorithm)** with a **two-stage critical-first Edmonds–Karp network flow allocator** to model and analyze microgrid resilience under simultaneous, multi-element ($N-k$) grid failures.
 
 ![Dashboard Preview](dashboard/dashboard_preview.png)
 
@@ -8,23 +14,23 @@ An engineering simulation and decision-support framework coupling **Artificial S
 
 ## What the Project Is
 
-This project models an autonomous, fault-tolerant **50-consumer, 8-substation mesh microgrid** equipped with distributed, heterogeneous generation assets:
-- **Solar Photovoltaic (PV) & Wind Turbine generation** (diurnal stochastic generation profiles)
-- **Battery Energy Storage System (BESS)** with state-of-charge (SOC) accounting, charge/discharge power limits, and protected reserve margins
-- **Main Dispatchable Generator** for baseline backup power
-- **8 Modeled Substations (`S1`–`S8`)** interconnected via a 16-corridor mesh transmission network
+This framework simulates an autonomous, fault-tolerant **50-consumer, 8-substation meshed microgrid** equipped with distributed generation and storage assets:
+- **Solar Photovoltaic (PV) & Wind Turbine generation**: Diurnal stochastic generation profiles.
+- **Battery Energy Storage System (BESS)**: State-of-charge (SOC) tracking, charge/discharge power limits, efficiency modeling, and protected reserve margins.
+- **Main Dispatchable Generator**: Baseline thermal backup power.
+- **8 Modeled Substations (`S1`–`S8`)**: Interconnected via a 16-corridor mesh transmission network.
 - **50 Individually Modeled Consumers**:
-  - **7 Critical Priority Consumers** (e.g., healthcare facilities, emergency services: `C003`, `C010`, `C017`, `C024`, `C031`, `C038`, `C045`)
-  - **43 Standard Commercial & Residential Consumers**
-  - **Dual Redundant Feeders**: Every consumer is connected to their two nearest substations via independent 5.5 MW distribution feeders.
+  - **7 Critical Priority Consumers**: Healthcare facilities and emergency services (`C003`, `C010`, `C017`, `C024`, `C031`, `C038`, `C045`).
+  - **43 Standard Commercial & Residential Consumers**.
+  - **Dual Redundant Feeders**: Every consumer is connected to their two nearest substations via independent 5.5 MW distribution feeders (100 total distribution edges).
 
-The system allows operators and researchers to simulate **$N-k$ multi-contingencies** (arbitrary simultaneous cuts to transmission corridors, substations, generation sources, and consumer feeders) and observe how the grid autonomously reroutes power and protects critical loads.
+The system allows operators and researchers to inject arbitrary **$N-k$ multi-contingencies** (simultaneous cuts to transmission corridors, substations, generation sources, and consumer feeders) and observe how power is autonomously rerouted to protect critical infrastructure.
 
 ---
 
-## Core Algorithmic Architecture
+## Modular System Architecture
 
-The computational engine is implemented in compiled **C++17** for high-performance sub-second solving, coupled via a Python adapter to an interactive **Streamlit** dashboard.
+The project is structured into clean, decoupled components. The computational core is written in compiled **C++17** and packaged as a static library (`asi_core`), linked to the standalone solver executable (`asi_engine`) and test runner (`asi_tests`). The Python layer serves as a dashboard adapter and visualization interface.
 
 ```
                     ┌──────────────────────────────────────────────┐
@@ -37,82 +43,172 @@ The computational engine is implemented in compiled **C++17** for high-performan
                                   config.txt / JSON
                                            │
                                            ▼
-                    ┌──────────────────────────────────────────────┐
-                    │         Compiled C++17 Solver Engine         │
-                    │                  (asi_engine)                │
-                    │                                              │
-                    │  1. Swarm Intelligence (Genetic Algorithm)   │
-                    │     • 24-hour discrete battery schedule      │
-                    │     • Cost, wear & penalty optimization      │
-                    │                                              │
-                    │  2. Edmonds–Karp Max-Flow Allocation         │
-                    │     • Node-split substation throughput       │
-                    │     • Phase 1: Critical-load priority flow   │
-                    │     • Phase 2: Standard-load augmentation   │
-                    │       (retaining same residual graph)        │
-                    └──────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                   Compiled C++17 Solver Engine (asi_engine)                      │
+│                                                                                  │
+│   network.cpp       • Topology, 50 consumers, baseline demands, config parsing   │
+│   flow.cpp          • Edmonds–Karp algorithm & 2-stage priority allocation       │
+│   simulation.cpp    • 24-hr diurnal profiles, generator dispatch, battery SOC    │
+│   optimizer.cpp     • Genetic algorithm battery scheduler (GA swarm)             │
+│   output.cpp        • High-precision hourly CSV export & key-value summaries     │
+│   main.cpp          • Program CLI entrypoint, argument parsing, orchestration    │
+└──────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+> **Full Architectural Details**: See [**ARCHITECTURE.md**](ARCHITECTURE.md) for the module dependency graph, lifecycle sequence diagrams, and mathematical formulations.
+
+---
+
+## Core Algorithms
 
 ### 1. Artificial Swarm Intelligence (Genetic Algorithm Dispatch)
 - Optimizes a 24-hour chromosome of discrete battery actions $a_h \in \{-2, -1, 0, 1, 2\}$ (full/half discharge, idle, half/full charge).
 - Balances generation against demand, minimizes expensive generator fuel consumption and battery wear, and prevents costly unserved energy penalties ($18,000/MWh).
-- Implements elitism, crossover, mutation, and a guaranteed baseline comparison against the no-action schedule ($score(best) \le score(noAction)$).
+- Implements fitness caching, elitism, tournament/rank selection, single-point crossover, and mutation.
+- **Guaranteed Baseline Invariant**: Optimized schedules are verified against the unmanaged all-zero schedule to ensure $score(\text{best}) \le score(\text{noAction})$.
 
 ### 2. Two-Stage Priority Edmonds–Karp Network Flow
-- Formulates power routing as a directed capacity-constrained flow graph from sources $\rightarrow$ substations $\rightarrow$ transmission corridors $\rightarrow$ feeders $\rightarrow$ consumers.
-- **Stage 1**: Connects only critical consumers to the sink to maximize their delivered power first.
-- **Stage 2**: Adds non-critical consumers and continues flow augmentation on the **exact same residual graph**. Reverse residual edges allow earlier non-critical routes to be rearranged without reducing the secured flow to critical loads.
+- Formulates power routing as a directed capacity-constrained flow graph: `Sources → Substations → Transmission Mesh → Feeders → Consumers`.
+- Enforces an 82 MW throughput limit on each substation using node-splitting (`sub:in → sub:out`).
+- **Stage 1 (Critical Maximization)**: Directs flow from critical consumers to `SINK` using Edmonds–Karp shortest-augmenting paths.
+- **Stage 2 (System Maximization)**: Opens arcs from standard consumers to `SINK` and continues flow augmentation on the **exact same residual graph**. Reverse residual arcs permit earlier routes to be rearranged dynamically without diminishing secured critical delivery.
 
 ---
 
 ## Repository Structure
 
-- `cpp/src/main.cpp`: C++17 implementation of Edmonds–Karp max-flow, capacity-constrained network allocation, critical-first service, battery SOC accounting, 24-hour simulation, and the genetic algorithm optimizer.
-- `CMakeLists.txt`: Portable CMake build configuration.
-- `dashboard/app.py`: Interactive Streamlit dashboard with cartographic topology atlas, failure selector, and hourly scrub controls.
-- `dashboard/topology.py`: Plotly cartographic visualization showing grid assets, substations, and dynamic consumer service colors.
-- `dashboard/network_flow.py`: Static topology metadata and visual-map feeder endpoint mapping.
-- `dashboard/microgrid.py`: Python adapter serializing configuration, spawning `asi_engine`, and parsing hourly results.
-- `tests/`: Automated pytest test suite verifying flow balance, demand conservation, feeder isolation, and contingency handling.
-- `sweep_corridors.py`: Batch evaluation script running N-1 transmission corridor cuts across all 16 lines.
-- `test_line_outage.py` & `test_corridor_outage.py`: Standalone contingency verification benchmarks.
+```
+ASI_Smart_Power_Grid/
+├── CMakeLists.txt              # CMake build configuration (asi_core, asi_engine, asi_tests)
+├── ARCHITECTURE.md             # Complete architecture and dependency specification
+├── README.md                   # Project overview, quickstart, and documentation
+├── build_cpp.bat               # Windows batch script to build C++ engine
+├── run_dashboard.bat           # Setup virtual environment and launch Streamlit UI
+├── run_tests.bat               # Run C++ unit tests and Python test suite
+├── requirements.txt            # Python dependencies (Streamlit, Plotly, Pandas, Pytest)
+├── cpp/
+│   ├── include/
+│   │   └── asi/
+│   │       ├── common.hpp      # System constants, Settings, Config, FlowResult, Sim
+│   │       ├── network.hpp     # Grid topology, consumer IDs, baseline demands, parser
+│   │       ├── flow.hpp        # MaxFlow class & two-stage flow allocation logic
+│   │       ├── simulation.hpp  # Diurnal profiles, battery dispatch, simulation loop
+│   │       ├── optimizer.hpp   # Genetic algorithm optimizer
+│   │       └── output.hpp      # CSV escaping, hourly data export, summary output
+│   ├── src/
+│   │   ├── network.cpp         # Topology definitions, baseline demand, config reading
+│   │   ├── flow.cpp            # Edmonds-Karp residual graph and allocation implementation
+│   │   ├── simulation.cpp      # State-of-charge machine, costs, and hourly metrics
+│   │   ├── optimizer.cpp       # GA population, crossover, mutation, elitism
+│   │   ├── output.cpp          # Telemetry formatting and summary serialization
+│   │   └── main.cpp            # CLI entrypoint, argument parsing, mode dispatch
+│   └── tests/
+│       └── test_main.cpp       # Standalone C++ unit test suite
+├── dashboard/
+│   ├── app.py                  # Interactive Streamlit dashboard UI
+│   ├── microgrid.py            # Python adapter invoking asi_engine executable
+│   ├── network_flow.py         # Static topology metadata and feeder endpoint mapping
+│   └── topology.py             # Plotly cartographic visualization of microgrid
+├── tests/
+│   ├── test_core.py            # Pytest suite for flow balance and optimizer repeatability
+│   └── test_network_scenarios.py # Pytest suite for N-k outage & capacity contingencies
+├── sweep_corridors.py          # Batch evaluation script for N-1 transmission line cuts
+├── test_corridor_outage.py     # Standalone S3-S5 physical corridor cut benchmark
+└── test_line_outage.py         # Standalone transmission line outage benchmark
+```
+
+---
+
+## Quickstart & How to Run
+
+### 1. Launch the Web Dashboard (Windows)
+Double-click `run_dashboard.bat` or run:
+```cmd
+run_dashboard.bat
+```
+Alternatively, using Python directly:
+```bash
+.venv\Scripts\python.exe -m streamlit run dashboard\app.py
+```
+Open [http://localhost:8501](http://localhost:8501) in your browser.
+
+### 2. Run All Automated Tests
+To run both the compiled **C++ unit tests** and the **Python pytest suite**:
+```cmd
+run_tests.bat
+```
+Or run individually:
+```bash
+# C++ unit tests
+build\Release\asi_tests.exe
+
+# Python integration tests
+.venv\Scripts\python.exe -m pytest -v tests
+```
+
+### 3. Build the C++ Solver Engine Standalone
+```cmd
+build_cpp.bat
+```
+Or via CMake:
+```bash
+cmake -S . -B build
+cmake --build build --config Release --parallel
+```
+
+### 4. Run the C++ Engine from the CLI
+```bash
+build\Release\asi_engine.exe <config_path> <hourly_csv_path> <summary_txt_path>
+```
+To view available options:
+```bash
+build\Release\asi_engine.exe --help
+```
+
+### 5. Run Outage and Contingency Analysis Scripts
+```bash
+# Evaluate N-1 cuts across all 16 transmission lines
+.venv\Scripts\python.exe sweep_corridors.py
+
+# Evaluate targeted corridor cut (S3 -> S5)
+.venv\Scripts\python.exe test_corridor_outage.py
+
+# Evaluate single transmission line outage
+.venv\Scripts\python.exe test_line_outage.py
+```
 
 ---
 
 ## Requirements
 
-- **Python**: 3.11 recommended
-- **CMake**: 3.16+
-- **C++ Compiler**: C++17 compatible (Visual Studio 2022 Build Tools with Desktop development with C++, GCC 9+, or Clang 10+)
-
----
-
-## Run on Windows
-
-1. Run `run_dashboard.bat`. It creates `.venv` if needed, installs Python dependencies, builds the C++ engine with CMake, and starts Streamlit.
-2. Or run `build_cpp.bat` to compile the C++ engine standalone (`asi_engine.exe`).
-3. Run `run_tests.bat` to execute the full automated test suite.
+- **Python**: 3.11 recommended (requires packages listed in `requirements.txt`)
+- **CMake**: 3.16 or higher
+- **C++ Compiler**: Compatible with C++17 (Visual Studio 2022 C++ Build Tools, GCC 9+, or Clang 10+)
 
 ---
 
 ## Unserved Demand and Outage Semantics
 
-For every hour and consumer, the engine records demand, delivered power, and unserved power ($\max(0, \text{demand} - \text{delivered})$). System unserved energy is the sum of hourly unmet demand. The simulation checks that source delivery, consumer delivery, and demand accounting reconcile within floating-point tolerance ($< 10^{-5}\text{ MW}$).
+For every hour and consumer, the engine records demand, delivered power, and unserved power:
+$$\text{Unserved} = \max(0, \text{Demand} - \text{Delivered})$$
 
-Failed source connections, directional corridors, substations, and consumer feeders have their modeled capacity set to zero. A failed substation also disables attached source links, mesh links, and feeder links.
+The simulation verifies that source delivery, consumer delivery, and demand accounting reconcile within floating-point tolerance ($< 10^{-5}\text{ MW}$). Failed source connections, directional corridors, substations, and consumer feeders have their capacity set to zero. A failed substation disables attached source links, mesh lines, and distribution feeders.
 
-The source-to-substation topology is deliberately sparse so transmission corridors are necessary for transfers; otherwise direct source connections to every substation would make corridor failures trivial.
+The source-to-substation topology is intentionally sparse so transmission corridors are necessary for transfers; otherwise, direct source links to all substations would make corridor cuts trivial.
 
 ---
 
 ## Controlled Baseline Comparison
 
-The headline metrics report values for a battery schedule optimized for the currently active scenario. Comparing raw metrics across separate runs can be misleading because the Genetic Algorithm may choose different battery actions for each scenario. 
+The headline dashboard metrics report values for a battery schedule optimized for the currently active scenario. Comparing raw metrics across separate runs can be misleading because the Genetic Algorithm may select different battery actions for each scenario.
 
-The dashboard's **Failure impact vs. same dispatch without failures** panel provides the controlled comparison: it replays the exact same 24 battery actions, random seed, and renewable profile with and without the selected network failures to isolate the pure physical impact of the outages.
+The dashboard's **Failure impact vs. same dispatch without failures** panel isolates physical impact: it replays the identical 24 battery actions, random seed, and renewable profile with and without the selected network failures.
 
 ---
 
 ## Technical Scope & Modeling Boundaries
 
-This is a research and educational **capacity-constrained network-flow (transport) model**, not a full AC power-flow or protection-grade grid controller. It models active power ($MW$) and energy balance ($MWh$), but does not compute complex bus voltages, reactive power ($MVAR$), phase angles, frequency dynamics, or transient stability limits.
+This is a research and educational **capacity-constrained network-flow (transport) model**, not a full AC power-flow or protection-grade grid controller:
+- It tracks active power ($MW$) and energy balance ($MWh$) under linear/directed capacity constraints.
+- It does **not** compute complex bus voltages, reactive power ($MVAR$), phase angles, frequency regulation, or transient electromechanical stability limits.
+- The Genetic Algorithm operates as a centralized scheduler for the 24-hour battery chromosome, rather than a decentralized physical multi-agent swarm.

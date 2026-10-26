@@ -1,7 +1,8 @@
 """Static grid topology metadata for the Streamlit UI.
 
-Network allocation and Edmonds–Karp are implemented in cpp/src/main.cpp. This module
-contains only capacities/topology labels and the existing map-derived feeder endpoints.
+Network allocation and Edmonds–Karp are implemented in the C++ engine (cpp/include/asi/
+and cpp/src/flow.cpp). This module contains only capacities/topology labels and the
+existing map-derived feeder endpoints.
 """
 SUBSTATION_POSITIONS = {
     'S1': (31, 72), 'S2': (48, 78), 'S3': (67, 69), 'S4': (76, 49),
