@@ -15,6 +15,10 @@ add_library(asi_core STATIC
     cpp/src/simulation.cpp
     cpp/src/optimizer.cpp
     cpp/src/output.cpp
+    cpp/src/power_flow.cpp
+    cpp/src/aco.cpp
+    cpp/src/pso.cpp
+    cpp/src/agent.cpp
 )
 target_include_directories(asi_core PUBLIC cpp/include)
 

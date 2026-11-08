@@ -10,11 +10,11 @@ namespace asi {
 
 MaxFlow::MaxFlow(size_t n) : g(n) {}
 
-void MaxFlow::add(int u, int v, double c) {
+void MaxFlow::add(int u, int v, double c, double priority) {
     int ui = static_cast<int>(g[u].size());
     int vi = static_cast<int>(g[v].size());
-    g[u].push_back({v, vi, c, c});
-    g[v].push_back({u, ui, 0.0, 0.0});
+    g[u].push_back({v, vi, c, c, priority});
+    g[v].push_back({u, ui, 0.0, 0.0, 0.0});
     refs.push_back({u, ui});
 }
 
@@ -29,12 +29,35 @@ double MaxFlow::run(int s, int t) {
         while (!q.empty() && p[t].first < 0) {
             int u = q.front();
             q.pop();
-            for (int i = 0; i < static_cast<int>(g[u].size()); ++i) {
-                if (g[u][i].cap > 1e-9 && p[g[u][i].to].first < 0) {
-                    p[g[u][i].to] = {u, i};
-                    q.push(g[u][i].to);
-                    if (g[u][i].to == t) {
-                        break;
+
+            // Check if any outgoing arcs have prioritized ordering
+            bool hasPriority = false;
+            for (const auto& a : g[u]) {
+                if (a.priority > 0.0) {
+                    hasPriority = true;
+                    break;
+                }
+            }
+
+            if (hasPriority) {
+                std::vector<int> order(g[u].size());
+                std::iota(order.begin(), order.end(), 0);
+                std::stable_sort(order.begin(), order.end(), [&](int a, int b) {
+                    return g[u][a].priority > g[u][b].priority;
+                });
+                for (int i : order) {
+                    if (g[u][i].cap > 1e-9 && p[g[u][i].to].first < 0) {
+                        p[g[u][i].to] = {u, i};
+                        q.push(g[u][i].to);
+                        if (g[u][i].to == t) break;
+                    }
+                }
+            } else {
+                for (int i = 0; i < static_cast<int>(g[u].size()); ++i) {
+                    if (g[u][i].cap > 1e-9 && p[g[u][i].to].first < 0) {
+                        p[g[u][i].to] = {u, i};
+                        q.push(g[u][i].to);
+                        if (g[u][i].to == t) break;
                     }
                 }
             }
@@ -63,8 +86,10 @@ double MaxFlow::run(int s, int t) {
     return total;
 }
 
-FlowResult allocate(const Config& cfg, double solar, double wind,
-                    double batt, double gen, double scale) {
+FlowResult allocate(const Config& cfg, double solar, double wind, double hydro,
+                    double batt, double gen, double scale,
+                    const std::map<Edge, double>& routingWeights,
+                    const std::map<std::string, double>& subStorageAvail) {
     const auto base = baselineDemands();
     std::map<std::string, double> d;
     for (const auto& [consumer, value] : base) {
@@ -90,6 +115,15 @@ FlowResult allocate(const Config& cfg, double solar, double wind,
         meshCaps[{b, a}] = 48.0;
     }
     std::map<Edge, double> feederCaps = cfg.feeders;
+
+    // Apply substation storage capacity overrides if provided
+    double totalSubStorage = 0.0;
+    for (const auto& sub : subs) {
+        auto it = subStorageAvail.find(sub);
+        double avail = (it != subStorageAvail.end()) ? std::max(0.0, it->second) : 0.0;
+        sourceCaps[{"Substation Storage", sub}] = avail;
+        totalSubStorage += avail;
+    }
 
     auto knownLine = [&](const Edge& edge) {
         return sourceCaps.count(edge) || meshCaps.count(edge);
@@ -130,7 +164,9 @@ FlowResult allocate(const Config& cfg, double solar, double wind,
     std::map<std::string, double> supply = {
         {"Solar", std::max(0.0, solar)},
         {"Wind", std::max(0.0, wind)},
+        {"Hydro", std::max(0.0, hydro)},
         {"Battery", std::max(0.0, batt)},
+        {"Substation Storage", totalSubStorage},
         {"Main Generator", std::max(0.0, gen)}
     };
 
@@ -155,10 +191,6 @@ FlowResult allocate(const Config& cfg, double solar, double wind,
         out.feedFlow[edge] = 0.0;
     }
 
-    // Construct one residual network for both priority stages. Running the
-    // second augmentation on the SAME residual graph is essential: it allows
-    // Edmonds-Karp to reroute earlier critical-consumer paths to free capacity
-    // for noncritical demand without reducing already-served critical demand.
     std::vector<std::string> nodes = {"SRC", "SINK"};
     auto addNode = [&](const std::string& node) {
         if (std::find(nodes.begin(), nodes.end(), node) == nodes.end()) {
@@ -206,8 +238,8 @@ FlowResult allocate(const Config& cfg, double solar, double wind,
     std::vector<ArcKey> keys;
     MaxFlow mf(nodes.size());
 
-    auto addArc = [&](const std::string& u, const std::string& v, double cap, ArcKey key) {
-        mf.add(id(u), id(v), std::max(0.0, cap));
+    auto addArc = [&](const std::string& u, const std::string& v, double cap, ArcKey key, double priority = 0.0) {
+        mf.add(id(u), id(v), std::max(0.0, cap), priority);
         keys.push_back(std::move(key));
     };
 
@@ -221,13 +253,16 @@ FlowResult allocate(const Config& cfg, double solar, double wind,
         addArc(sub + ":in", sub + ":out", subcap[sub], {"sub", sub, ""});
     }
     for (const auto& [edge, cap] : meshCaps) {
-        addArc(edge.first + ":out", edge.second + ":in", cap, {"mesh", edge.first, edge.second});
+        double prio = 0.0;
+        auto itP = routingWeights.find(edge);
+        if (itP != routingWeights.end()) prio = itP->second;
+        addArc(edge.first + ":out", edge.second + ":in", cap, {"mesh", edge.first, edge.second}, prio);
     }
     for (const auto& [edge, cap] : feederCaps) {
         addArc(edge.first + ":out", edge.second, cap, {"feed", edge.first, edge.second});
     }
 
-    // First maximize critical service.
+    // First maximize critical service
     for (int i = 1; i <= NUM_CONSUMERS; ++i) {
         const std::string consumer = consumerId(i);
         if (isCriticalConsumer(i)) {
@@ -236,8 +271,7 @@ FlowResult allocate(const Config& cfg, double solar, double wind,
     }
     mf.run(id("SRC"), id("SINK"));
 
-    // Then maximize total service while retaining critical priority, continuing
-    // on the same residual graph so earlier routes can be rearranged safely.
+    // Then maximize total service while retaining critical priority on the same residual graph
     for (int i = 1; i <= NUM_CONSUMERS; ++i) {
         const std::string consumer = consumerId(i);
         if (!isCriticalConsumer(i)) {
@@ -268,6 +302,8 @@ FlowResult allocate(const Config& cfg, double solar, double wind,
     out.delivered = std::accumulate(out.cd.begin(), out.cd.end(), 0.0,
         [](double total, const auto& item) { return total + item.second; });
     out.unserved = std::max(0.0, out.demand - out.delivered);
+    out.hydroUsed = out.sourceUsed["Hydro"];
+    out.substationStorageDischarged = out.sourceUsed["Substation Storage"];
 
     for (int i = 1; i <= NUM_CONSUMERS; ++i) {
         if (isCriticalConsumer(i)) {

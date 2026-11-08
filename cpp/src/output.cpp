@@ -70,13 +70,39 @@ void exportSummary(const std::string& path, const std::array<int, HOURS_PER_DAY>
         << "\ndelivered=" << result.delivered
         << "\ndemand=" << result.demand
         << "\ngenerator=" << result.generator
+        << "\nhydro=" << result.hydro
         << "\ncurtailment=" << result.curtailment
         << "\nthroughput=" << result.throughput
+        << "\nsubstation_storage_throughput=" << result.substationStorageThroughput
         << "\nfinal_soc=" << result.finalSoc
         << "\nobjective=" << result.objective
         << "\ncritical_delivered=" << result.criticalDelivered
         << "\ncritical_demand=" << result.criticalDemand
-        << "\ncritical_service_pct=" << result.criticalPct << "\n";
+        << "\ncritical_service_pct=" << result.criticalPct
+        << "\nrecovery_time_hours=" << result.recoveryTime
+        << "\ncritical_restoration_pct=" << result.criticalRestorationPct
+        << "\nisland_count=" << result.islandCount
+        << "\ncascading_containment_factor=" << result.cascadingContainment
+        << "\ntransmission_losses=" << result.totalLosses
+        << "\nmin_voltage_pu=" << result.minVoltage
+        << "\nmax_frequency_dev_hz=" << result.maxFreqDev
+        << "\nagent_messages_count=" << result.messages.size() << "\n";
+}
+
+void exportAgentMessages(const std::string& path, const std::vector<AgentMessage>& messages) {
+    std::ofstream f(path);
+    if (!f) {
+        throw std::runtime_error("Cannot write agent messages CSV: " + path);
+    }
+    f << "Hour,Sender,Receiver,Type,Power_MW,Detail\n";
+    for (const auto& m : messages) {
+        f << m.hour << ","
+          << escapeCsv(m.sender) << ","
+          << escapeCsv(m.receiver) << ","
+          << escapeCsv(m.type) << ","
+          << m.powerMw << ","
+          << escapeCsv(m.detail) << "\n";
+    }
 }
 
 } // namespace asi

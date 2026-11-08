@@ -22,6 +22,7 @@ TRANSMISSION_CAPACITY = 48.0
 SOURCE_LINE_CAPACITY = {
     'Solar': {'S1':48,'S2':42,'S3':0,'S4':0,'S5':0,'S6':0,'S7':24,'S8':30},
     'Wind': {'S1':0,'S2':35,'S3':43,'S4':0,'S5':30,'S6':36,'S7':0,'S8':0},
+    'Hydro': {'S1':0,'S2':0,'S3':0,'S4':35,'S5':25,'S6':0,'S7':0,'S8':0},
     'Battery': {s: (40 if s in {'S1','S4','S8'} else 0) for s in SUBSTATIONS},
     'Main Generator': {s: (55 if s in {'S3','S4','S7'} else 0) for s in SUBSTATIONS},
 }

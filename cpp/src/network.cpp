@@ -37,7 +37,7 @@ const std::vector<Edge>& meshCorridors() {
 
 const std::vector<std::string>& energySources() {
     static const std::vector<std::string> sources = {
-        "Solar", "Wind", "Battery", "Main Generator"
+        "Solar", "Wind", "Hydro", "Battery", "Substation Storage", "Main Generator"
     };
     return sources;
 }
@@ -53,10 +53,13 @@ std::map<Edge, double> defaultSourceCapacities() {
         const bool windHere = (i == 1 || i == 2 || i == 4 || i == 5);
         const bool batteryHere = (i == 0 || i == 3 || i == 7);
         const bool generatorHere = (i == 2 || i == 3 || i == 6);
+        const bool hydroHere = (i == 3 || i == 4); // S4 (35 MW) and S5 (25 MW)
 
         sourceCaps[{"Solar", subs[i]}] = solarHere ? solarCap[i] : 0.0;
         sourceCaps[{"Wind", subs[i]}] = windHere ? windCap[i] : 0.0;
+        sourceCaps[{"Hydro", subs[i]}] = hydroHere ? (i == 3 ? 35.0 : 25.0) : 0.0;
         sourceCaps[{"Battery", subs[i]}] = batteryHere ? 40.0 : 0.0;
+        sourceCaps[{"Substation Storage", subs[i]}] = 10.0; // Local direct storage feeder
         sourceCaps[{"Main Generator", subs[i]}] = generatorHere ? 55.0 : 0.0;
     }
     return sourceCaps;
@@ -123,6 +126,20 @@ Config readConfig(const std::string& path) {
 
         if (k == "mode") {
             c.mode = v;
+        } else if (k == "dispatch_mode") {
+            c.dispatchMode = c.s.dispatchMode = v;
+        } else if (k == "generator_ramp_limit") {
+            c.s.generatorRampLimit = num();
+        } else if (k == "battery_degradation_cost") {
+            c.s.batteryDegradationCost = num();
+        } else if (k == "pso_particles") {
+            c.s.psoParticles = integer();
+        } else if (k == "pso_iterations") {
+            c.s.psoIterations = integer();
+        } else if (k == "aco_ants") {
+            c.s.acoAnts = integer();
+        } else if (k == "aco_evaporation") {
+            c.s.acoEvaporation = num();
         } else if (k == "seed") {
             c.seed = c.s.seed = integer();
         } else if (k == "demand_scale") {
@@ -131,6 +148,14 @@ Config readConfig(const std::string& path) {
             c.s.solarScale = num();
         } else if (k == "wind_scale") {
             c.s.windScale = num();
+        } else if (k == "hydro_scale") {
+            c.s.hydroScale = num();
+        } else if (k == "hydro_capacity") {
+            c.s.hydroCapacity = num();
+        } else if (k == "sub_storage_capacity" || k == "substation_storage_capacity") {
+            c.s.substationStorageCapacity = num();
+        } else if (k == "sub_storage_power" || k == "substation_storage_power") {
+            c.s.substationStoragePower = num();
         } else if (k == "generator_capacity") {
             c.s.generatorCapacity = num();
         } else if (k == "battery_capacity") {

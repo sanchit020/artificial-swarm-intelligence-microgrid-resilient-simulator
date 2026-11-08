@@ -11,6 +11,7 @@ struct HourlyProfiles {
     std::array<double, HOURS_PER_DAY> demand{};
     std::array<double, HOURS_PER_DAY> solar{};
     std::array<double, HOURS_PER_DAY> wind{};
+    std::array<double, HOURS_PER_DAY> hydro{};
 };
 
 // Deterministic pseudo-random generation of diurnal solar, wind, and demand profiles

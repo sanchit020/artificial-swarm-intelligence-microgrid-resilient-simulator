@@ -4,16 +4,20 @@
 
 #include <array>
 #include <string>
+#include <vector>
 
 namespace asi {
 
-// Escape a string for CSV formatting (handles quotes, commas, newlines)
+// Escapes special characters for RFC 4180 CSV export
 std::string escapeCsv(const std::string& s);
 
-// Export hourly detailed results (all metrics, feeder/transmission/source flows) to CSV
+// Exports 24-hour simulation telemetry rows to CSV
 void exportHourlyCsv(const std::string& path, const Sim& result);
 
-// Export 24-hour summary metrics and chosen battery action schedule to key-value summary file
+// Exports key-value simulation metrics summary file
 void exportSummary(const std::string& path, const std::array<int, HOURS_PER_DAY>& actions, const Sim& result);
+
+// Exports decentralized multi-agent communication log to CSV
+void exportAgentMessages(const std::string& path, const std::vector<AgentMessage>& messages);
 
 } // namespace asi

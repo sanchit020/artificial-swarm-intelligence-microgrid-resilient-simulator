@@ -9,16 +9,17 @@
 
 int main(int argc, char** argv) {
     if (argc == 2 && (std::string(argv[1]) == "-h" || std::string(argv[1]) == "--help")) {
-        std::cout << "Usage: asi_engine config.txt hourly.csv summary.txt\n\n"
+        std::cout << "Usage: asi_engine config.txt hourly.csv summary.txt [messages.csv]\n\n"
                   << "Arguments:\n"
                   << "  config.txt    Path to microgrid scenario configuration file\n"
                   << "  hourly.csv    Output path for 24-hour hourly results CSV\n"
-                  << "  summary.txt   Output path for scenario summary key-value file\n";
+                  << "  summary.txt   Output path for scenario summary key-value file\n"
+                  << "  messages.csv  (Optional) Output path for agent communication log CSV\n";
         return 0;
     }
 
-    if (argc != 4) {
-        std::cerr << "usage: asi_engine config.txt hourly.csv summary.txt\n";
+    if (argc < 4 || argc > 5) {
+        std::cerr << "usage: asi_engine config.txt hourly.csv summary.txt [messages.csv]\n";
         return 2;
     }
 
@@ -26,6 +27,7 @@ int main(int argc, char** argv) {
         const std::string configPath  = argv[1];
         const std::string hourlyPath  = argv[2];
         const std::string summaryPath = argv[3];
+        const std::string messagesPath = (argc == 5) ? argv[4] : "";
 
         asi::Config config = asi::readConfig(configPath);
 
@@ -42,6 +44,10 @@ int main(int argc, char** argv) {
 
         asi::exportHourlyCsv(hourlyPath, result);
         asi::exportSummary(summaryPath, chosenActions, result);
+
+        if (!messagesPath.empty()) {
+            asi::exportAgentMessages(messagesPath, result.messages);
+        }
 
         return 0;
     } catch (const std::exception& e) {

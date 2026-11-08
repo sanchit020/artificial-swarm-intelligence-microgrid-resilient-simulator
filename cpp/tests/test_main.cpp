@@ -4,6 +4,10 @@
 #include "asi/simulation.hpp"
 #include "asi/optimizer.hpp"
 #include "asi/output.hpp"
+#include "asi/power_flow.hpp"
+#include "asi/aco.hpp"
+#include "asi/pso.hpp"
+#include "asi/agent.hpp"
 
 #include <cmath>
 #include <iostream>
@@ -61,10 +65,6 @@ void test_network_topology() {
 void test_edmonds_karp_maxflow() {
     std::cout << "[TEST] Edmonds-Karp MaxFlow Algorithm..." << std::flush;
 
-    // Simple 4-node flow network:
-    // 0 (SRC) -> 1 (cap 10), 0 -> 2 (cap 10)
-    // 1 -> 3 (SINK, cap 5), 2 -> 3 (SINK, cap 15)
-    // 1 -> 2 (cap 15)
     asi::MaxFlow mf(4);
     mf.add(0, 1, 10.0);
     mf.add(0, 2, 10.0);
@@ -84,7 +84,6 @@ void test_simulation_and_flow_conservation() {
     asi::Config cfg;
     cfg.seed = 2026;
 
-    // Populate 100 feeders (2 feeders per consumer)
     for (int i = 1; i <= asi::NUM_CONSUMERS; ++i) {
         std::string c = asi::consumerId(i);
         cfg.feeders[{"S1", c}] = 5.5;
@@ -110,7 +109,7 @@ void test_simulation_and_flow_conservation() {
 }
 
 void test_optimizer_baseline_guarantee() {
-    std::cout << "[TEST] Optimizer Baseline Guarantee..." << std::flush;
+    std::cout << "[TEST] Optimizer Baseline Guarantee (Tournament Selection)..." << std::flush;
 
     asi::Config cfg;
     cfg.seed = 17;
@@ -132,8 +131,101 @@ void test_optimizer_baseline_guarantee() {
     std::array<int, asi::HOURS_PER_DAY> noAction{};
     asi::Sim baselineSim = asi::simulate(cfg, noAction);
 
-    // Optimizer must never return a schedule worse than no-action schedule
     TEST_ASSERT(optSim.objective <= baselineSim.objective + 1e-7, "Optimized objective must not exceed baseline");
+
+    std::cout << " PASSED\n";
+}
+
+void test_dc_power_flow() {
+    std::cout << "[TEST] DC Power Flow & Losses Modeling..." << std::flush;
+
+    std::map<std::string, double> netInjections = {
+        {"S1", 25.0}, {"S3", 40.0}, {"S2", -20.0}, {"S5", -30.0}, {"S8", -15.0}
+    };
+    std::map<asi::Edge, double> activeLineCaps;
+    for (const auto& [u, v] : asi::meshCorridors()) {
+        activeLineCaps[{u, v}] = 48.0;
+        activeLineCaps[{v, u}] = 48.0;
+    }
+    std::map<asi::Edge, double> allocatedFlows;
+    allocatedFlows[{"S1", "S2"}] = 15.0;
+    allocatedFlows[{"S3", "S5"}] = 25.0;
+
+    auto dc = asi::solveDcPowerFlow(netInjections, activeLineCaps, allocatedFlows);
+    TEST_ASSERT(dc.busAngles.size() == 8, "Must solve angles for all 8 substations");
+    TEST_ASSERT(dc.busVoltages.size() == 8, "Must compute voltages for all 8 substations");
+    TEST_ASSERT(dc.minVoltage >= 0.85 && dc.minVoltage <= 1.05, "Voltages must remain within physical bounds");
+    TEST_ASSERT(dc.totalLosses >= 0.0, "Transmission losses must be non-negative");
+    TEST_ASSERT(dc.islandCount >= 1, "Must detect at least 1 island");
+    TEST_ASSERT(dc.cascadingContainment >= 0.0 && dc.cascadingContainment <= 1.0, "Containment factor in [0, 1]");
+
+    std::cout << " PASSED\n";
+}
+
+void test_ant_colony_optimization() {
+    std::cout << "[TEST] Ant Colony Optimization Dynamic Rerouting..." << std::flush;
+
+    asi::AntColonyOptimizer aco(10, 0.15, 2026);
+    std::map<asi::Edge, double> activeLineCaps;
+    for (const auto& [u, v] : asi::meshCorridors()) {
+        activeLineCaps[{u, v}] = 48.0;
+        activeLineCaps[{v, u}] = 48.0;
+    }
+
+    // Cut corridor S3 <-> S5 to simulate N-1 contingency
+    asi::Edge cutForward{"S3", "S5"};
+    asi::Edge cutReverse{"S5", "S3"};
+    activeLineCaps[cutForward] = 0.0;
+    activeLineCaps[cutReverse] = 0.0;
+
+    std::map<std::string, double> surplus = {{"S3", 50.0}};
+    std::map<std::string, double> deficit = {{"S5", 50.0}};
+
+    auto weights = aco.optimizeRoutes(activeLineCaps, surplus, deficit);
+    double cutTau = weights.pheromoneLevels[cutForward];
+    TEST_ASSERT(cutTau < 0.1, "Tripped corridor must have evaporated pheromone");
+    TEST_ASSERT(weights.pheromoneLevels.size() > 0, "Must maintain pheromones");
+
+    std::cout << " PASSED\n";
+}
+
+void test_particle_swarm_optimization() {
+    std::cout << "[TEST] Particle Swarm Optimization Resource Dispatch..." << std::flush;
+
+    asi::ParticleSwarmOptimizer pso(12, 10, 2026);
+    asi::Settings s;
+    s.generatorCapacity = 175.0;
+    s.generatorRampLimit = 35.0;
+
+    // With previous generator power at 100 MW, next hour cannot exceed 135 MW due to ramp limits
+    auto res = pso.optimizeHour(200.0, 50.0, 20.0, 100.0, 60.0, s);
+    TEST_ASSERT(res.generatorPower <= 100.0 + s.generatorRampLimit + 1e-4, "Generator ramp up bound violated");
+    TEST_ASSERT(res.generatorPower >= 100.0 - s.generatorRampLimit - 1e-4, "Generator ramp down bound violated");
+    TEST_ASSERT(res.expectedCost > 0.0, "Cost must be positive");
+
+    std::cout << " PASSED\n";
+}
+
+void test_decentralized_multi_agent_system() {
+    std::cout << "[TEST] Decentralized Multi-Agent Coordination..." << std::flush;
+
+    asi::MultiAgentGridSystem mas(2026);
+    asi::Settings s;
+    mas.initializeAgents(s);
+
+    std::map<std::string, double> subGens = {{"S1", 40.0}, {"S3", 50.0}};
+    std::map<std::string, double> subDems = {{"S2", 30.0}, {"S4", 25.0}};
+    std::map<std::string, double> angles = {{"S1", 0.0}, {"S2", -2.5}};
+    std::map<std::string, double> volts = {{"S1", 1.0}, {"S2", 0.98}};
+    std::map<asi::Edge, double> caps;
+    for (const auto& [u, v] : asi::meshCorridors()) {
+        caps[{u, v}] = 48.0;
+    }
+
+    auto msgs = mas.stepHour(12, subGens, subDems, angles, volts, caps);
+    TEST_ASSERT(mas.substationAgents().size() == 8, "Must track all 8 substation agents");
+    TEST_ASSERT(mas.derAgents().size() == 4, "Must track 4 DER agents");
+    TEST_ASSERT(msgs.size() > 0, "Agents must exchange negotiation messages during deficit");
 
     std::cout << " PASSED\n";
 }
@@ -155,6 +247,10 @@ int main() {
         test_edmonds_karp_maxflow();
         test_simulation_and_flow_conservation();
         test_optimizer_baseline_guarantee();
+        test_dc_power_flow();
+        test_ant_colony_optimization();
+        test_particle_swarm_optimization();
+        test_decentralized_multi_agent_system();
         test_csv_escaping();
         std::cout << "All C++ Unit Tests PASSED successfully!\n";
         return 0;
