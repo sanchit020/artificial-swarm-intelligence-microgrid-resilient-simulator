@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from dashboard.microgrid import Settings, simulate
+from dashboard.microgrid import Settings, simulate, optimize
 from dashboard.network_flow import consumer_feeder_edges
 
 
@@ -76,3 +76,15 @@ def test_fixed_dispatch_outage_does_not_improve_unserved_energy():
     )
     assert damaged["unserved"] >= normal["unserved"] - 1e-5
     assert damaged["delivered"] <= normal["delivered"] + 1e-5
+
+
+def test_zero_battery_contingency_succeeds():
+    settings = Settings(seed=2026, battery_capacity=0.0, battery_power=0.0, population=4, generations=1)
+    actions, opt_res = optimize(settings, seed=2026)
+    assert opt_res["delivered"] > 0
+    sim_res = simulate(actions, settings, seed=2026)
+    assert sim_res["delivered"] > 0
+    df = sim_res["hourly"]
+    assert (df["Battery discharge (MW)"] == 0).all()
+    assert (df["Battery charge (MW)"] == 0).all()
+

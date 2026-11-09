@@ -94,7 +94,7 @@ void validateConfig(const Config& cfg) {
         throw std::runtime_error("Config must provide two feeders for every consumer (100 edges)");
     }
     const auto& s = cfg.s;
-    if (s.batteryCapacity <= 0.0 || s.batteryPower < 0.0 ||
+    if (s.batteryCapacity < 0.0 || s.batteryPower < 0.0 ||
         s.chargeEff <= 0.0 || s.chargeEff > 1.0 ||
         s.dischargeEff <= 0.0 || s.dischargeEff > 1.0) {
         throw std::runtime_error("Invalid battery settings");

@@ -27,8 +27,12 @@ PsoDispatchResult ParticleSwarmOptimizer::optimizeHour(
     if (genMin > genMax) genMin = genMax;
 
     // Battery dispatch bounds (positive = discharge, negative = charge)
-    double maxDischarge = std::min(s.batteryPower, std::max(0.0, currentSoc - s.reserveSoc) * s.dischargeEff);
-    double maxCharge = std::min(s.batteryPower, std::max(0.0, s.batteryCapacity - currentSoc) / s.chargeEff);
+    double maxDischarge = (s.batteryCapacity > 1e-6 && s.batteryPower > 1e-6)
+        ? std::min(s.batteryPower, std::max(0.0, currentSoc - s.reserveSoc) * s.dischargeEff)
+        : 0.0;
+    double maxCharge = (s.batteryCapacity > 1e-6 && s.batteryPower > 1e-6)
+        ? std::min(s.batteryPower, std::max(0.0, s.batteryCapacity - currentSoc) / s.chargeEff)
+        : 0.0;
     double batMin = -maxCharge;
     double batMax = maxDischarge;
 
@@ -41,7 +45,9 @@ PsoDispatchResult ParticleSwarmOptimizer::optimizeHour(
         double fuel = pgen * s.generatorCost;
 
         // Battery degradation: wear cost increases exponentially with deep discharge
-        double dodFactor = std::max(0.0, 0.30 - currentSoc / s.batteryCapacity) * 3.0;
+        double dodFactor = (s.batteryCapacity > 1e-6)
+            ? std::max(0.0, 0.30 - currentSoc / s.batteryCapacity) * 3.0
+            : 0.0;
         double effectiveWear = s.wearCost + s.batteryDegradationCost * dodFactor;
         double wear = std::abs(pbat) * effectiveWear;
 

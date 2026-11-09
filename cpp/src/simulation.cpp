@@ -49,15 +49,15 @@ HourlyProfiles generateHourlyProfiles(int seed, const Settings& s) {
 
 Sim simulate(const Config& cfg, const std::array<int, HOURS_PER_DAY>& actions) {
     const auto& s = cfg.s;
-    if (s.batteryCapacity <= 0.0 || s.batteryPower < 0.0 ||
+    if (s.batteryCapacity < 0.0 || s.batteryPower < 0.0 ||
         s.chargeEff <= 0.0 || s.chargeEff > 1.0 ||
         s.dischargeEff <= 0.0 || s.dischargeEff > 1.0) {
         throw std::runtime_error("Invalid battery settings");
     }
 
     HourlyProfiles prof = generateHourlyProfiles(cfg.seed, s);
-    double reserve = std::clamp(s.reserveSoc, 0.0, s.batteryCapacity);
-    double soc = std::clamp(s.initialSoc, 0.0, s.batteryCapacity);
+    double reserve = (s.batteryCapacity > 1e-6) ? std::clamp(s.reserveSoc, 0.0, s.batteryCapacity) : 0.0;
+    double soc = (s.batteryCapacity > 1e-6) ? std::clamp(s.initialSoc, 0.0, s.batteryCapacity) : 0.0;
 
     // Substation local energy storage initialization (15 MWh per substation default)
     double subStorageCap = std::max(1.0, s.substationStorageCapacity);
@@ -214,7 +214,9 @@ Sim simulate(const Config& cfg, const std::array<int, HOURS_PER_DAY>& actions) {
                       std::max(0.0, hydroGrid - f.sourceUsed["Hydro"]);
 
         // Battery degradation: wear cost increases with deep discharge (DoD)
-        double dodFactor = std::max(0.0, 0.30 - soc / s.batteryCapacity) * 3.0;
+        double dodFactor = (s.batteryCapacity > 1e-6)
+            ? std::max(0.0, 0.30 - soc / s.batteryCapacity) * 3.0
+            : 0.0;
         double effectiveWearCost = s.wearCost + s.batteryDegradationCost * dodFactor;
         double wear = (charge + discharge) * effectiveWearCost;
 

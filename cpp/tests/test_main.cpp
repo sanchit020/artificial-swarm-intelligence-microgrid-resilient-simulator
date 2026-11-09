@@ -240,6 +240,37 @@ void test_csv_escaping() {
     std::cout << " PASSED\n";
 }
 
+void test_zero_battery_contingency() {
+    std::cout << "[TEST] Zero Battery Contingency Simulation & Optimization..." << std::flush;
+
+    asi::Config cfg;
+    cfg.seed = 2026;
+    cfg.s.batteryCapacity = 0.0;
+    cfg.s.batteryPower = 0.0;
+    cfg.s.population = 4;
+    cfg.s.generations = 1;
+
+    for (int i = 1; i <= asi::NUM_CONSUMERS; ++i) {
+        std::string c = asi::consumerId(i);
+        cfg.feeders[{"S1", c}] = 5.5;
+        cfg.feeders[{"S2", c}] = 5.5;
+    }
+
+    std::array<int, asi::HOURS_PER_DAY> actions{};
+    asi::Sim sim = asi::simulate(cfg, actions);
+    TEST_ASSERT(sim.delivered > 0.0, "Delivered energy should be strictly positive without batteries");
+    for (const auto& r : sim.rows) {
+        TEST_ASSERT(r.at("Battery discharge (MW)") == 0.0, "Battery discharge must be zero");
+        TEST_ASSERT(r.at("Battery charge (MW)") == 0.0, "Battery charge must be zero");
+        TEST_ASSERT(r.at("Battery SOC (MWh)") == 0.0, "Battery SOC must be zero");
+    }
+
+    auto opt = asi::optimize(cfg);
+    TEST_ASSERT(opt.second.delivered > 0.0, "Optimizer must succeed with zero battery");
+
+    std::cout << " PASSED\n";
+}
+
 int main() {
     std::cout << "=== Running ASI C++ Unit Tests ===\n";
     try {
@@ -252,6 +283,7 @@ int main() {
         test_particle_swarm_optimization();
         test_decentralized_multi_agent_system();
         test_csv_escaping();
+        test_zero_battery_contingency();
         std::cout << "All C++ Unit Tests PASSED successfully!\n";
         return 0;
     } catch (const std::exception& e) {
