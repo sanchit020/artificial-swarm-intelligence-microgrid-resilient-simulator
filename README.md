@@ -91,12 +91,14 @@ The project is structured into clean, decoupled components. The computational co
 - Optimizes a 24-hour chromosome of discrete battery actions $a_h \in \{-2, -1, 0, 1, 2\}$.
 - Implements **3-way Tournament Selection**, elitism, single-point crossover, and mutation.
 - **Guaranteed Baseline Invariant**: $score(\text{best}) \le score(\text{noAction})$.
+- **Physical Zero-Capacity & Outage Invariant**: Safe boundary clamping prevents division-by-zero during depth-of-discharge degradation computations when all battery storage units are taken down or offline.
 
 ### 6. Two-Stage Priority Edmonds–Karp Network Flow
 - Formulates power routing as a directed capacity-constrained flow graph biased by ACO detour weights: `Sources → Substations → Transmission Mesh → Feeders → Consumers`.
 - Enforces an 82 MW throughput limit on each substation using node-splitting (`sub:in → sub:out`).
 - **Stage 1 (Critical Maximization)**: Augments flow strictly to critical healthcare and emergency facilities first.
 - **Stage 2 (System Maximization)**: Continues flow augmentation on the same residual graph for standard consumers.
+- **Full Contingency Invariance**: Gracefully sustains all multi-cut combinations without throwing exceptions, routing available generation to surviving lines or reporting exact unserved demand under total blackout.
 
 ---
 
@@ -136,13 +138,14 @@ ASI_Smart_Power_Grid/
 │   │   ├── output.cpp          # Telemetry formatting, summary, message CSV export
 │   │   └── main.cpp            # CLI entrypoint, argument parsing, mode dispatch
 │   └── tests/
-│       └── test_main.cpp       # Standalone C++ unit test suite (9 test cases)
+│       └── test_main.cpp       # Standalone C++ unit test suite (10 test cases)
 ├── dashboard/
 │   ├── app.py                  # Streamlined SCADA cockpit UI (dynamic map, reroute telemetry, failure simulation)
 │   ├── microgrid.py            # Python adapter invoking asi_engine executable
 │   ├── network_flow.py         # Static topology metadata and feeder endpoint mapping
 │   └── topology.py             # Plotly cartographic visualization of microgrid
 ├── tests/
+│   ├── test_all_contingency_combinations.py # Pytest suite for exhaustive combinatorial outages and blackouts
 │   ├── test_core.py            # Pytest suite for flow balance and optimizer repeatability
 │   ├── test_network_scenarios.py # Pytest suite for N-k outage & capacity contingencies
 │   ├── test_dc_power_flow.py   # Pytest suite for bus angles, voltages, and losses
@@ -175,10 +178,10 @@ run_tests.bat
 ```
 Or run individually:
 ```bash
-# C++ unit tests (9 test suites)
+# C++ unit tests (10 test suites)
 build\Release\asi_tests.exe
 
-# Python integration tests (18 test suites)
+# Python integration tests (49 test cases)
 .venv\Scripts\python.exe -m pytest -v tests
 ```
 
